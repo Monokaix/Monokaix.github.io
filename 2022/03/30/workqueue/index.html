@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Mist","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":true,"style":"mac"},"back2top":{"enable":true,"sidebar":true,"scrollpercent":true},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="k8s中使用了大量的workqueue来实现协程间通信，尤其是在各种controller实现的逻辑中，workqueue很好的封装了队列这一数据结构，实现了延迟和限速队列，本文将对k8s中的workqueue工作队列的原理与实现进行研究分析。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="k8s workqueue实现分析">
+<meta property="og:url" content="http://example.com/2022/03/30/workqueue/index.html">
+<meta property="og:site_name" content="Monokai&#39;s Blog">
+<meta property="og:description" content="k8s中使用了大量的workqueue来实现协程间通信，尤其是在各种controller实现的逻辑中，workqueue很好的封装了队列这一数据结构，实现了延迟和限速队列，本文将对k8s中的workqueue工作队列的原理与实现进行研究分析。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2022-03-30T02:04:42.351Z">
+<meta property="article:modified_time" content="2022-03-30T02:04:42.351Z">
+<meta property="article:author" content="Monokai">
+<meta property="article:tag" content="K8s">
+<meta property="article:tag" content="源码">
+<meta property="article:tag" content="workqueue">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://example.com/2022/03/30/workqueue/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>k8s workqueue实现分析 | Monokai's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Monokai's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">画船听雨眠</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-fw fa-tags"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div id="search-result">
+  <div id="no-result">
+    <i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="reading-progress-bar"></div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/03/30/workqueue/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Monokai">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Monokai's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          k8s workqueue实现分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2022-03-30 02:04:42" itemprop="dateCreated datePublished" datetime="2022-03-30T02:04:42Z">2022-03-30</time>
+            </span>
+
+          
+            <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv" style="display: none;">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span id="busuanzi_value_page_pv"></span>
+            </span><br>
+            <span class="post-meta-item" title="本文字数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-file-word-o"></i>
+              </span>
+                <span class="post-meta-item-text">本文字数：</span>
+              <span>9.2k</span>
+            </span>
+            <span class="post-meta-item" title="阅读时长">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-clock-o"></i>
+              </span>
+                <span class="post-meta-item-text">阅读时长 &asymp;</span>
+              <span>8 分钟</span>
+            </span>
+            <div class="post-description">k8s中使用了大量的workqueue来实现协程间通信，尤其是在各种controller实现的逻辑中，workqueue很好的封装了队列这一数据结构，实现了延迟和限速队列，本文将对k8s中的workqueue工作队列的原理与实现进行研究分析。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h1><p><code>channel</code>是<code>go</code>协程间通信的主要方式，但使用channel时通常需要预设<code>channel</code>的buffer大小。在实际业务中，通常难以准确的预知需要的<code>channel</code>大小，若预设较大buffer的channel可能会造成内存浪费，若预设的buffer较小则可能造成处理任务的阻塞，而<code>channel</code>不支持动态扩容。因此需要一种动态调节缓冲大小的数据结构来支持协程间协作，<code>k8s</code>的<code>client-go</code>中提供了基于切片的支持线程安全的并发队列，解耦生产者与消费者，并且提供了去重、限速、重试加入队列等功能，代码简洁设计巧妙，可作为除<code>channel</code>外另一种便捷的协程通信手段。</p>
+<h1 id="基本用法"><a href="#基本用法" class="headerlink" title="基本用法"></a>基本用法</h1><p><a target="_blank" rel="noopener" href="https://github.com/kubernetes/client-go/blob/master/examples/workqueue/main.go">k8s/client-go代码仓</a>中以一个controller处理任务为例子，提供了<code>work queue</code>队列的官方example，<code>work queue</code>部分主要代码如下</p>
+<h2 id="生产者部分"><a href="#生产者部分" class="headerlink" title="生产者部分"></a>生产者部分</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 创建一个work queue</span></span><br><span class="line">queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())</span><br><span class="line"><span class="comment">// 将一个待处理的对象添加work queue</span></span><br><span class="line">queue.Add(key)</span><br></pre></td></tr></table></figure>
+
+<h2 id="消费者部分"><a href="#消费者部分" class="headerlink" title="消费者部分"></a>消费者部分</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// workers代表处理并发处work queue中任务的协程数</span></span><br><span class="line"><span class="keyword">for</span> i := <span class="number">0</span>; i &lt; workers; i++ &#123;</span><br><span class="line">	<span class="keyword">go</span> wait.Until(c.runWorker, time.Second, stopCh)</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// runWorker是一个死循环，通过processNextItem从队列中取出key进行处理，然后取出next key继续处理</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *Controller)</span> <span class="title">runWorker</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> c.processNextItem() &#123;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// processNextItem就是真正的处理逻辑了，</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *Controller)</span> <span class="title">processNextItem</span><span class="params">()</span> <span class="title">bool</span></span> &#123;</span><br><span class="line">	<span class="comment">// quit为true代表队列已关闭</span></span><br><span class="line">	key, quit := c.queue.Get()</span><br><span class="line">	<span class="keyword">if</span> quit &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 处理完后将key从队列中移除，并且该操作是并发安全的，后续会进行详细分析</span></span><br><span class="line">	<span class="keyword">defer</span> c.queue.Done(key)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 调用实际业务代码对每个key进行处理</span></span><br><span class="line">	err := c.syncToStdout(key.(<span class="keyword">string</span>))</span><br><span class="line">	<span class="comment">// 如果处理异常则进行错误处理</span></span><br><span class="line">	c.handleErr(err, key)</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// 错误处理代码，对上一函数中可能处理失败的key进行重试等操作</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *Controller)</span> <span class="title">handleErr</span><span class="params">(err error, key <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// 如果处理没有错误，调用Forget方法将key从限速队列中移除</span></span><br><span class="line">		c.queue.Forget(key)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// NumRequeues方法返回了一个key重入队列的次数，若超过设定的阈值，则从限速队列中移除，不再处理</span></span><br><span class="line">	<span class="keyword">if</span> c.queue.NumRequeues(key) &lt; <span class="number">5</span> &#123;</span><br><span class="line">		klog.Infof(<span class="string">&quot;Error syncing pod %v: %v&quot;</span>, key, err)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 若重入队列次数没超过阈值，则添加到限速队列</span></span><br><span class="line">		c.queue.AddRateLimited(key)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	c.queue.Forget(key)</span><br><span class="line">	<span class="comment">// 错误上报</span></span><br><span class="line">	runtime.HandleError(err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，<code>work queue</code>的使用比较简单，且官方已经给了使用模板，调用者不需要处理元素去重、重入队列、并发安全、错误处理等逻辑，只需关注自己的业务即可。</p>
+<p>限速队列由多个队列一起完成，下文将逐一介绍其具体实现。</p>
+<h1 id="基本队列work-queue"><a href="#基本队列work-queue" class="headerlink" title="基本队列work queue"></a>基本队列<code>work queue</code></h1><h2 id="接口"><a href="#接口" class="headerlink" title="接口"></a>接口</h2><p>该<code>Interface</code>定义了一个最基本的队列的基本方法</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Interface <span class="keyword">interface</span> &#123;</span><br><span class="line">    <span class="comment">// 添加元素</span></span><br><span class="line">	Add(item <span class="keyword">interface</span>&#123;&#125;)</span><br><span class="line">    <span class="comment">// 队列长度</span></span><br><span class="line">	Len() <span class="keyword">int</span></span><br><span class="line">    <span class="comment">// 返回队首元素，并返队列队列是否关闭</span></span><br><span class="line">	Get() (item <span class="keyword">interface</span>&#123;&#125;, shutdown <span class="keyword">bool</span>)</span><br><span class="line">    <span class="comment">// 处理完一个元素后从队列中删除</span></span><br><span class="line">	Done(item <span class="keyword">interface</span>&#123;&#125;)</span><br><span class="line">    <span class="comment">// 关闭队列</span></span><br><span class="line">	ShutDown()</span><br><span class="line">    <span class="comment">// 返回队列是否关闭</span></span><br><span class="line">	ShuttingDown() <span class="keyword">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="实现"><a href="#实现" class="headerlink" title="实现"></a>实现</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Type <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// interface&#123;&#125;类型的切片，存储具体的key</span></span><br><span class="line">	queue []t</span><br><span class="line">    <span class="comment">// 存储需要被处理的元素</span></span><br><span class="line">	dirty set</span><br><span class="line">    <span class="comment">// 存储正在处理的元素</span></span><br><span class="line">	processing set</span><br><span class="line">    <span class="comment">// 用于唤醒其他协程队列已满足条件可以继续处理，如队列由空变为非空</span></span><br><span class="line">	cond *sync.Cond</span><br><span class="line">    <span class="comment">// 标记队列是否关闭</span></span><br><span class="line">	shuttingDown <span class="keyword">bool</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 监控指标相关字段</span></span><br><span class="line">	metrics queueMetrics</span><br><span class="line">	unfinishedWorkUpdatePeriod time.Duration</span><br><span class="line">	clock                      clock.Clock</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里重点介绍下<code>shutdown</code>标记，该标记主要为了通知其他<code>goroutine</code>如消费者、监控组件等队列是否关闭状态，其他<code>goroutine</code>处理是检查到队列为关闭状态时停止工作，避免发生未知错误。</p>
+<h3 id="主要方法"><a href="#主要方法" class="headerlink" title="主要方法"></a>主要方法</h3><h4 id="Add"><a href="#Add" class="headerlink" title="Add"></a><code>Add</code></h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *Type)</span> <span class="title">Add</span><span class="params">(item <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">    <span class="comment">// 加锁互斥保证线程安全</span></span><br><span class="line">	q.cond.L.Lock()</span><br><span class="line">	<span class="keyword">defer</span> q.cond.L.Unlock()</span><br><span class="line">	<span class="keyword">if</span> q.shuttingDown &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 去重</span></span><br><span class="line">	<span class="keyword">if</span> q.dirty.has(item) &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 记录监控指标</span></span><br><span class="line">	q.metrics.add(item)</span><br><span class="line"></span><br><span class="line">	q.dirty.insert(item)</span><br><span class="line">    <span class="comment">// 当有相同元素正在处理时，同样进行去重操作，不予入队</span></span><br><span class="line">	<span class="keyword">if</span> q.processing.has(item) &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 最终添加到队列</span></span><br><span class="line">	q.queue = <span class="built_in">append</span>(q.queue, item)</span><br><span class="line">	q.cond.Signal()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Add</code>方法会先key放入<code>dirty</code>和queue中，加入时都会对这两个字段存储的元素进行去重操作，同时若该key正在被处理，则不会加入，防止同一时刻有同一个key被多个worker处理，从而导致业务逻辑错误。所以dirty集合的设计既有去重功能，又保证一个元素至多被处理一次。</p>
+<h4 id="Get"><a href="#Get" class="headerlink" title="Get"></a><code>Get</code></h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *Type)</span> <span class="title">Get</span><span class="params">()</span> <span class="params">(item <span class="keyword">interface</span>&#123;&#125;, shutdown <span class="keyword">bool</span>)</span></span> &#123;</span><br><span class="line">	q.cond.L.Lock()</span><br><span class="line">	<span class="keyword">defer</span> q.cond.L.Unlock()</span><br><span class="line">    <span class="comment">// 如果队列元素为空且没有关闭则等待其他goroutine唤醒</span></span><br><span class="line">	<span class="keyword">for</span> <span class="built_in">len</span>(q.queue) == <span class="number">0</span> &amp;&amp; !q.shuttingDown &#123;</span><br><span class="line">		q.cond.Wait()</span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 若已经关闭则应该返回</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(q.queue) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="comment">// We must be shutting down.</span></span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, <span class="literal">true</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 从queue字段取出一个元素</span></span><br><span class="line">	item, q.queue = q.queue[<span class="number">0</span>], q.queue[<span class="number">1</span>:]</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 监控相关</span></span><br><span class="line">	q.metrics.get(item)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 把key加入processing集合并从dirty删除，这样相同的key可以在当前key处理完后继续入队处理</span></span><br><span class="line">	q.processing.insert(item)</span><br><span class="line">	q.dirty.<span class="built_in">delete</span>(item)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> item, <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Get</code>操作也比较简单，需要注意的是Get时key也会从dirty集合中移除</p>
+<h4 id="Done-amp-ShutDown"><a href="#Done-amp-ShutDown" class="headerlink" title="Done &amp; ShutDown"></a><code>Done</code> &amp; <code>ShutDown</code></h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *Type)</span> <span class="title">Done</span><span class="params">(item <span class="keyword">interface</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">	q.cond.L.Lock()</span><br><span class="line">	<span class="keyword">defer</span> q.cond.L.Unlock()</span><br><span class="line"></span><br><span class="line">	q.metrics.done(item)</span><br><span class="line"></span><br><span class="line">	q.processing.<span class="built_in">delete</span>(item)</span><br><span class="line">    <span class="comment">// 若key在处理的过程中，又再次被加入到队列，由Add方法可知，当key在processing中时，Add操作只是把key放到了dirty集合，并没有放入queue中，因此</span></span><br><span class="line">    <span class="comment">// 相同的key处理完从processing中移除后，需要把key再放入到queue中，防止key被遗漏</span></span><br><span class="line">	<span class="keyword">if</span> q.dirty.has(item) &#123;</span><br><span class="line">		q.queue = <span class="built_in">append</span>(q.queue, item)</span><br><span class="line">		q.cond.Signal()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *Type)</span> <span class="title">ShutDown</span><span class="params">()</span></span> &#123;</span><br><span class="line">	q.cond.L.Lock()</span><br><span class="line">	<span class="keyword">defer</span> q.cond.L.Unlock()</span><br><span class="line">	q.shuttingDown = <span class="literal">true</span></span><br><span class="line">	q.cond.Broadcast()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以上就是<code>work queue</code>的基本逻辑，可以看到通过设置dirty和processing两个集合，<code>work queue</code>实现了去重功能，并防止了相同key被同时处理的错误。接下来将介绍<code>work queue</code>如何实现延迟已经限速。</p>
+<h1 id="延迟队列DelayingQueue"><a href="#延迟队列DelayingQueue" class="headerlink" title="延迟队列DelayingQueue"></a>延迟队列<code>DelayingQueue</code></h1><h2 id="接口-1"><a href="#接口-1" class="headerlink" title="接口"></a>接口</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> DelayingInterface <span class="keyword">interface</span> &#123;</span><br><span class="line">	Interface</span><br><span class="line">    <span class="comment">// 经过duration时间后item被重新加入队列</span></span><br><span class="line">	AddAfter(item <span class="keyword">interface</span>&#123;&#125;, duration time.Duration)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>延迟队列在上文介绍的<code>work queue</code>基础上实现，继承了<code>Interface</code>接口，多了一个<code>AddAfter</code>方法，通过设置指定的duration来达到限速的目的。</p>
+<h2 id="实现-1"><a href="#实现-1" class="headerlink" title="实现"></a>实现</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newDelayingQueue</span><span class="params">(clock clock.Clock, q Interface, name <span class="keyword">string</span>)</span> *<span class="title">delayingType</span></span> &#123;</span><br><span class="line">	ret := &amp;delayingType&#123;</span><br><span class="line">		Interface:       q,</span><br><span class="line">		clock:           clock,</span><br><span class="line">		heartbeat:       clock.NewTicker(maxWait),</span><br><span class="line">		stopCh:          <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;),</span><br><span class="line">		waitingForAddCh: <span class="built_in">make</span>(<span class="keyword">chan</span> *waitFor, <span class="number">1000</span>),</span><br><span class="line">		metrics:         newRetryMetrics(name),</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> ret.waitingLoop()</span><br><span class="line">	<span class="keyword">return</span> ret</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>newDelayingQueue</code>返回一个<code>delayingType</code>类型的限速队列，同时会启动一个<code>waitingLoop</code>协程处理被添加的key，接下来详细分析<code>AddAfter</code>和<code>waitingLoop</code>的实现。</p>
+<h3 id="主要方法-1"><a href="#主要方法-1" class="headerlink" title="主要方法"></a>主要方法</h3><h4 id="AddAfter"><a href="#AddAfter" class="headerlink" title="AddAfter"></a><code>AddAfter</code></h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *delayingType)</span> <span class="title">AddAfter</span><span class="params">(item <span class="keyword">interface</span>&#123;&#125;, duration time.Duration)</span></span> &#123;</span><br><span class="line">	<span class="keyword">if</span> q.ShuttingDown() &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	q.metrics.retry()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 没有延迟直接加入queue</span></span><br><span class="line">	<span class="keyword">if</span> duration &lt;= <span class="number">0</span> &#123;</span><br><span class="line">		q.Add(item)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-q.stopCh:</span><br><span class="line">        <span class="comment">// 将封装后的key放入waitingForAddCh channel</span></span><br><span class="line">	<span class="keyword">case</span> q.waitingForAddCh &lt;- &amp;waitFor&#123;data: item, readyAt: q.clock.Now().Add(duration)&#125;:</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>AddAfter</code>的主要逻辑就是将key和key的延迟时间封装成一个<code>waitFor</code> <code>struct</code>，其中<code>readyAt</code>即为key应该加入到队列的时间，然后将该<code>struct</code>放入到<code>waitingForAddCh</code>中，<code>waitingLoop</code>协程会异步进行处理。默认<code>waitingForAddCh</code>的大小为1000，当<code>channel</code>满时添加key会被block。</p>
+<h4 id="waitingLoop"><a href="#waitingLoop" class="headerlink" title="waitingLoop"></a><code>waitingLoop</code></h4><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *delayingType)</span> <span class="title">waitingLoop</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">defer</span> utilruntime.HandleCrash()</span><br><span class="line"></span><br><span class="line">	never := <span class="built_in">make</span>(&lt;-<span class="keyword">chan</span> time.Time)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 记录等待队列中第一个key需要的等待的时间</span></span><br><span class="line">	<span class="keyword">var</span> nextReadyAtTimer clock.Timer</span><br><span class="line"></span><br><span class="line">    <span class="comment">//  基于堆实现的优先级队列，需要最早被加入到队列的key放在最前面</span></span><br><span class="line">	waitingForQueue := &amp;waitForPriorityQueue&#123;&#125;</span><br><span class="line">	heap.Init(waitingForQueue)</span><br><span class="line"></span><br><span class="line">	waitingEntryByData := <span class="keyword">map</span>[t]*waitFor&#123;&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		<span class="keyword">if</span> q.Interface.ShuttingDown() &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		now := q.clock.Now()</span><br><span class="line"></span><br><span class="line">		<span class="comment">// 判断堆顶元素是否到期需要加入队列</span></span><br><span class="line">		<span class="keyword">for</span> waitingForQueue.Len() &gt; <span class="number">0</span> &#123;</span><br><span class="line">			entry := waitingForQueue.Peek().(*waitFor)</span><br><span class="line">            <span class="comment">// 如果还没到期，继续等待或者继续监听后续key加入事件</span></span><br><span class="line">			<span class="keyword">if</span> entry.readyAt.After(now) &#123;</span><br><span class="line">				<span class="keyword">break</span></span><br><span class="line">			&#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 从堆顶弹出元素添加到队列</span></span><br><span class="line">			entry = heap.Pop(waitingForQueue).(*waitFor)</span><br><span class="line">			q.Add(entry.data)</span><br><span class="line">			<span class="built_in">delete</span>(waitingEntryByData, entry.data)</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		nextReadyAt := never</span><br><span class="line">		<span class="keyword">if</span> waitingForQueue.Len() &gt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">if</span> nextReadyAtTimer != <span class="literal">nil</span> &#123;</span><br><span class="line">				nextReadyAtTimer.Stop()</span><br><span class="line">			&#125;</span><br><span class="line">			entry := waitingForQueue.Peek().(*waitFor)</span><br><span class="line">			nextReadyAtTimer = q.clock.NewTimer(entry.readyAt.Sub(now))</span><br><span class="line">			nextReadyAt = nextReadyAtTimer.C()</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-q.stopCh:</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line"></span><br><span class="line">		<span class="keyword">case</span> &lt;-q.heartbeat.C():</span><br><span class="line">			<span class="comment">// 等待心跳时间过期</span></span><br><span class="line"></span><br><span class="line">		<span class="keyword">case</span> &lt;-nextReadyAt:</span><br><span class="line">			<span class="comment">// 等待对顶元素时间过期</span></span><br><span class="line"></span><br><span class="line">            <span class="comment">// 从waitingForAddCh中取元素，若已经到期直接加入到队列，否则加入堆中等待处理</span></span><br><span class="line">		<span class="keyword">case</span> waitEntry := &lt;-q.waitingForAddCh:</span><br><span class="line">			<span class="keyword">if</span> waitEntry.readyAt.After(q.clock.Now()) &#123;</span><br><span class="line">				insert(waitingForQueue, waitingEntryByData, waitEntry)</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				q.Add(waitEntry.data)</span><br><span class="line">			&#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 尝试再取一个</span></span><br><span class="line">			drained := <span class="literal">false</span></span><br><span class="line">			<span class="keyword">for</span> !drained &#123;</span><br><span class="line">				<span class="keyword">select</span> &#123;</span><br><span class="line">				<span class="keyword">case</span> waitEntry := &lt;-q.waitingForAddCh:</span><br><span class="line">					<span class="keyword">if</span> waitEntry.readyAt.After(q.clock.Now()) &#123;</span><br><span class="line">						insert(waitingForQueue, waitingEntryByData, waitEntry)</span><br><span class="line">					&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">						q.Add(waitEntry.data)</span><br><span class="line">					&#125;</span><br><span class="line">				<span class="keyword">default</span>:</span><br><span class="line">					drained = <span class="literal">true</span></span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>waitingLoop</code>监听<code>waitingForAddCh</code> <code>channel</code>，从中取出待添加到队列的key，如果已经到期则直接加入，否则将key放入到堆中，然后每次从堆中取出最先过期的key进行判断处理。</p>
+<h1 id="限速队列RateLimitingQueue"><a href="#限速队列RateLimitingQueue" class="headerlink" title="限速队列RateLimitingQueue"></a>限速队列<code>RateLimitingQueue</code></h1><h2 id="接口-2"><a href="#接口-2" class="headerlink" title="接口"></a>接口</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> RateLimitingInterface <span class="keyword">interface</span> &#123;</span><br><span class="line">	DelayingInterface</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 限速器rate limiter指定的时间到期后将item加入队列</span></span><br><span class="line">	AddRateLimited(item <span class="keyword">interface</span>&#123;&#125;)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 将item从限速器删除，不再进行重试加入，但还是需要调用Done方法删除item</span></span><br><span class="line">	Forget(item <span class="keyword">interface</span>&#123;&#125;)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 返回item被重新入队列的次数</span></span><br><span class="line">	NumRequeues(item <span class="keyword">interface</span>&#123;&#125;) <span class="keyword">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>RateLimitingInterface</code>同样是在·的基础上多了三个方法，使用限速队列时需要调用<code>NewNamedRateLimitingQueue</code>方法传入<code>RateLimiter</code>，调用时可以传入不同的限速器<code>ratelimiter</code>实现，官方提供了四种rate Limiter实现，分别是<code>BucketRateLimiter</code>、<code>ItemExponentialFailureRateLimiter</code>、<code>ItemFastSlowRateLimiter</code>和<code>MaxOfRateLimiter。</code></p>
+<p><code>RateLimiter</code>需要实现三个方法</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> RateLimiter <span class="keyword">interface</span> &#123;</span><br><span class="line">   <span class="comment">// 返回key需要等待加入队列的时间</span></span><br><span class="line">   When(item <span class="keyword">interface</span>&#123;&#125;) time.Duration</span><br><span class="line">   <span class="comment">// 取消key的重试</span></span><br><span class="line">   Forget(item <span class="keyword">interface</span>&#123;&#125;)</span><br><span class="line">   <span class="comment">// 记录一个key被重试了多少次</span></span><br><span class="line">   NumRequeues(item <span class="keyword">interface</span>&#123;&#125;) <span class="keyword">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="BucketRateLimiter"><a href="#BucketRateLimiter" class="headerlink" title="BucketRateLimiter"></a><code>BucketRateLimiter</code></h2><p><code>BucketRateLimiter</code>是基于token令牌桶的限速方法，通过三方库<code>golang.org/x/time/rate</code>实现，令牌桶的算法原理是将固定数目的token放入桶中，桶满时则不再添加，然后元素需要拿到token才能被处理，后续元素需要等待有空闲的token被释放。使用时通过如下代码初始化一个令牌桶。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">rate.NewLimiter(rate.Limit(<span class="number">10</span>), <span class="number">100</span>)</span><br></pre></td></tr></table></figure>
+
+<p>10代表每秒往桶中放入token的数量，100代表token数量，加入有102个元素在，则前100个元素直接通过，而对于第100个元素，由于每秒放入10个token，因此处理一个token需要<code>100ms</code>，所以第101个元素需要等待<code>100ms</code>，同理第102个元素需要等待<code>200ms</code>。</p>
+<h2 id="ItemExponentialFailureRateLimiter"><a href="#ItemExponentialFailureRateLimiter" class="headerlink" title="ItemExponentialFailureRateLimiter"></a><code>ItemExponentialFailureRateLimiter</code></h2><p><code>ItemExponentialFailureRateLimiter</code>就是指数退避算法，有两个主要参数<code>baseDelay</code>，<code>maxDelay</code>，<code>baseDelay</code>代表需要推迟的基数，每次添加相同的key其对应的延迟加入时间会指数递增，但也不能无限递增，因此<code>maxDelay</code>规定了延迟时间的上限。指数退避部分主要代码如下。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 每次进来exp指数加1</span></span><br><span class="line">exp := r.failures[item]</span><br><span class="line">r.failures[item] = r.failures[item] + <span class="number">1</span></span><br><span class="line"></span><br><span class="line">backoff := <span class="keyword">float64</span>(r.baseDelay.Nanoseconds()) * math.Pow(<span class="number">2</span>, <span class="keyword">float64</span>(exp))</span><br><span class="line"><span class="keyword">if</span> backoff &gt; math.MaxInt64 &#123;</span><br><span class="line">   <span class="keyword">return</span> r.maxDelay</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>利润<code>baseDelay</code>为10，<code>maxDelay</code>为1000，同一个key第一次进行需要等待的时间为10*2^1，第二次为10*2^2，以此类推。</p>
+<h2 id="ItemFastSlowRateLimiter"><a href="#ItemFastSlowRateLimiter" class="headerlink" title="ItemFastSlowRateLimiter"></a><code>ItemFastSlowRateLimiter</code></h2><p><code>ItemFastSlowRateLimiter</code>定义了两个时间<code>fastDelay</code>、<code>lowDelay</code>以及达到<code>fastDelay</code>的阈值<code>maxFastAttempts。</code></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">r.failures[item] = r.failures[item] + <span class="number">1</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> r.failures[item] &lt;= r.maxFastAttempts &#123;</span><br><span class="line">   <span class="keyword">return</span> r.fastDelay</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">return</span> r.slowDelay</span><br></pre></td></tr></table></figure>
+
+<p>当重新加入队列的次数小于阈值<code>maxFastAttempts</code>，需要等待的时间为<code>fastDelay</code>，超过阈值则需要等待更长的时间<code>slowDelay。</code></p>
+<h2 id="MaxOfRateLimiter"><a href="#MaxOfRateLimiter" class="headerlink" title="MaxOfRateLimiter"></a><code>MaxOfRateLimiter</code></h2><p><code>MaxOfRateLimiter</code>则是多个<code>RateLimiter</code>的组合，需要延迟的时间为各个<code>RateLimiter</code>的时间最大值。</p>
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p><code>client-go</code>的<code>work queue</code>首先实现了一个最基础的队列，包含最基本的<code>Add</code>、<code>Get</code>等方法，然后在该队列基础上实现了<code>DelayingQueue</code>，实现了延迟队列的功能，最后在延迟队列的基础上实现了<code>RateLimitingQueue</code>，层层嵌套，最终实现了功能完善的限速队列，使得使用者只需关注业务逻辑，不需要自己实现底层逻辑。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          
+          <div class="post-tags">
+              <a href="/tags/K8s/" rel="tag"><i class="fa fa-tag"></i> K8s</a>
+              <a href="/tags/%E6%BA%90%E7%A0%81/" rel="tag"><i class="fa fa-tag"></i> 源码</a>
+              <a href="/tags/workqueue/" rel="tag"><i class="fa fa-tag"></i> workqueue</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/03/30/go-http/" rel="prev" title="Go HTTP Server源码分析">
+      <i class="fa fa-chevron-left"></i> Go HTTP Server源码分析
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2022/03/30/pod_terminating/" rel="next" title="Pod删除流程及长期处于Terminating状态分析">
+      Pod删除流程及长期处于Terminating状态分析 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+    <div class="comments" id="gitalk-container"></div>
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E7%94%A8%E6%B3%95"><span class="nav-number">2.</span> <span class="nav-text">基本用法</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%9F%E4%BA%A7%E8%80%85%E9%83%A8%E5%88%86"><span class="nav-number">2.1.</span> <span class="nav-text">生产者部分</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B6%88%E8%B4%B9%E8%80%85%E9%83%A8%E5%88%86"><span class="nav-number">2.2.</span> <span class="nav-text">消费者部分</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E9%98%9F%E5%88%97work-queue"><span class="nav-number">3.</span> <span class="nav-text">基本队列work queue</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text">接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.2.</span> <span class="nav-text">实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E6%96%B9%E6%B3%95"><span class="nav-number">3.2.1.</span> <span class="nav-text">主要方法</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Add"><span class="nav-number">3.2.1.1.</span> <span class="nav-text">Add</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Get"><span class="nav-number">3.2.1.2.</span> <span class="nav-text">Get</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Done-amp-ShutDown"><span class="nav-number">3.2.1.3.</span> <span class="nav-text">Done &amp; ShutDown</span></a></li></ol></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%BB%B6%E8%BF%9F%E9%98%9F%E5%88%97DelayingQueue"><span class="nav-number">4.</span> <span class="nav-text">延迟队列DelayingQueue</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3-1"><span class="nav-number">4.1.</span> <span class="nav-text">接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E7%8E%B0-1"><span class="nav-number">4.2.</span> <span class="nav-text">实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E6%96%B9%E6%B3%95-1"><span class="nav-number">4.2.1.</span> <span class="nav-text">主要方法</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#AddAfter"><span class="nav-number">4.2.1.1.</span> <span class="nav-text">AddAfter</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#waitingLoop"><span class="nav-number">4.2.1.2.</span> <span class="nav-text">waitingLoop</span></a></li></ol></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%99%90%E9%80%9F%E9%98%9F%E5%88%97RateLimitingQueue"><span class="nav-number">5.</span> <span class="nav-text">限速队列RateLimitingQueue</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3-2"><span class="nav-number">5.1.</span> <span class="nav-text">接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#BucketRateLimiter"><span class="nav-number">5.2.</span> <span class="nav-text">BucketRateLimiter</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ItemExponentialFailureRateLimiter"><span class="nav-number">5.3.</span> <span class="nav-text">ItemExponentialFailureRateLimiter</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ItemFastSlowRateLimiter"><span class="nav-number">5.4.</span> <span class="nav-text">ItemFastSlowRateLimiter</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#MaxOfRateLimiter"><span class="nav-number">5.5.</span> <span class="nav-text">MaxOfRateLimiter</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Monokai"
+      src="/images/avatar.gif">
+  <p class="site-author-name" itemprop="name">Monokai</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">8</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/Monokaix" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;Monokaix" rel="noopener" target="_blank"><i class="fa fa-fw fa-github"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+      </div>
+        <div class="back-to-top motion-element">
+          <i class="fa fa-arrow-up"></i>
+          <span>0%</span>
+        </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Monokai</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+      <span class="post-meta-item-text">站点总字数：</span>
+    <span title="站点总字数">51k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+      <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
+    <span title="站点阅读时长">46 分钟</span>
+</div>
+
+        
+<div class="busuanzi-count">
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+    <span class="post-meta-item" id="busuanzi_container_site_uv" style="display: none;">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv" style="display: none;">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+  <script>
+    (function(){
+      var bp = document.createElement('script');
+      var curProtocol = window.location.protocol.split(':')[0];
+      bp.src = (curProtocol === 'https') ? 'https://zz.bdstatic.com/linksubmit/push.js' : 'http://push.zhanzhang.baidu.com/push.js';
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(bp, s);
+    })();
+  </script>
+
+
+
+
+  
+<script src="/js/local-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.css">
+
+<script>
+NexT.utils.loadComments(document.querySelector('#gitalk-container'), () => {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/gitalk@1/dist/gitalk.min.js', () => {
+    var gitalk = new Gitalk({
+      clientID    : '57a4ec850cf32900866a',
+      clientSecret: '6e6fd8d4ed696a46de00fcfc1d32d6fa756bfa15',
+      repo        : 'Monokaix.github.io',
+      owner       : 'Monokaix',
+      admin       : ['Monokaix'],
+      id          : '1eb395744774ec825a39cc9a44590cc0',
+        language: 'zh-CN',
+      distractionFreeMode: true
+    });
+    gitalk.render('gitalk-container');
+  }, window.Gitalk);
+});
+</script>
+
+</body>
+</html>
