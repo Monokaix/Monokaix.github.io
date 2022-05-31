@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
 <meta name="theme-color" content="#222">
-<meta name="generator" content="Hexo 5.4.0">
+<meta name="generator" content="Hexo 5.4.2">
   <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
@@ -225,7 +225,7 @@
                 <i class="fa fa-file-word-o"></i>
               </span>
                 <span class="post-meta-item-text">本文字数：</span>
-              <span>6.1k</span>
+              <span>6.9k</span>
             </span>
             <span class="post-meta-item" title="阅读时长">
               <span class="post-meta-item-icon">
@@ -250,10 +250,10 @@
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> DeleteOptions <span class="keyword">struct</span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    GracePeriodSeconds *<span class="keyword">int64</span> </span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <h1 id="kube-apiserver行为"><a href="#kube-apiserver行为" class="headerlink" title="kube-apiserver行为"></a>kube-apiserver行为</h1><p>kube-apiserver使用go-restful作为server端web框架，因此要想清楚kube-apiserver接收到删除请求的具体处理流程，就应该找kube-apiserver对<code>DELETE</code>动作的处理，即删除操作对应的具体的http handler。</p>
-<p><a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/endpoints/installer.go#L190">staging/src/k8s.io/apiserver/pkg/endpoints/installer.go</a>文件会对api资源的handler进行安装，绑定url与其对应的handler，其中<code>registerResourceHandlers</code>函数注册了<code>DELETE</code>对应的handler，部分代码如下</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/endpoints/installer.go#L190">staging&#x2F;src&#x2F;k8s.io&#x2F;apiserver&#x2F;pkg&#x2F;endpoints&#x2F;installer.go</a>文件会对api资源的handler进行安装，绑定url与其对应的handler，其中<code>registerResourceHandlers</code>函数注册了<code>DELETE</code>对应的handler，部分代码如下</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> <span class="string">&quot;DELETE&quot;</span>: <span class="comment">// Delete a resource.</span></span><br><span class="line">    article := GetArticleForNoun(kind, <span class="string">&quot; &quot;</span>)</span><br><span class="line">    doc := <span class="string">&quot;delete&quot;</span> + article + kind</span><br><span class="line">    <span class="keyword">if</span> isSubresource &#123;</span><br><span class="line">        doc = <span class="string">&quot;delete &quot;</span> + subresource + <span class="string">&quot; of&quot;</span> + article + kind</span><br><span class="line">    &#125;</span><br><span class="line">    deleteReturnType := versionedStatus</span><br><span class="line">    <span class="keyword">if</span> deleteReturnsDeletedObject &#123;</span><br><span class="line">        deleteReturnType = producedObject</span><br><span class="line">    &#125;</span><br><span class="line">    handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, deprecated, removedRelease, restfulDeleteResource(gracefulDeleter, isGracefulDeleter, reqScope, admit))</span><br><span class="line">    <span class="keyword">if</span> enableWarningHeaders &#123;</span><br><span class="line">        handler = utilwarning.AddWarningsHandler(handler, warnings)</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
 
-<p>对应的handler即为<code>restfulDeleteResource</code>，最终该handler调用了<a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go#L1002">staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go</a>的DELETE方法，该方法会从请求参数中构造<code>DeleteOptions</code>参数，然后调用<a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/registry/rest/delete.go#L75">staging/src/k8s.io/apiserver/pkg/registry/rest/delete.go</a>的<code>rest.BeforeDelete</code>判断是否是优雅删除，主要逻辑</p>
+<p>对应的handler即为<code>restfulDeleteResource</code>，最终该handler调用了<a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go#L1002">staging&#x2F;src&#x2F;k8s.io&#x2F;apiserver&#x2F;pkg&#x2F;registry&#x2F;generic&#x2F;registry&#x2F;store.go</a>的DELETE方法，该方法会从请求参数中构造<code>DeleteOptions</code>参数，然后调用<a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/blob/99e36a93b2170292a4d7b675470cf64ce4fb4b56/staging/src/k8s.io/apiserver/pkg/registry/rest/delete.go#L75">staging&#x2F;src&#x2F;k8s.io&#x2F;apiserver&#x2F;pkg&#x2F;registry&#x2F;rest&#x2F;delete.go</a>的<code>rest.BeforeDelete</code>判断是否是优雅删除，主要逻辑</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BeforeDelete</span><span class="params">(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.Object, options *metav1.DeleteOptions)</span> <span class="params">(graceful, gracefulPending <span class="keyword">bool</span>, err error)</span></span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    gracefulStrategy, ok := strategy.(RESTGracefulDeleteStrategy)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="comment">// If we&#x27;re not deleting gracefully there&#x27;s no point in updating Generation, as we won&#x27;t update</span></span><br><span class="line">        <span class="comment">// the obcject before deleting it.</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 调用不同资源的设置的优雅删除策略设置优雅删除等参数</span></span><br><span class="line">    <span class="keyword">if</span> !gracefulStrategy.CheckGracefulDelete(ctx, obj, options) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 重点：设置不同资源的DeletionTimestamp和DeletionGracePeriodSeconds，标记为删除状态</span></span><br><span class="line">    now := metav1.NewTime(metav1.Now().Add(time.Second * time.Duration(*options.GracePeriodSeconds)))</span><br><span class="line">    objectMeta.SetDeletionTimestamp(&amp;now)</span><br><span class="line">    objectMeta.SetDeletionGracePeriodSeconds(options.GracePeriodSeconds)</span><br></pre></td></tr></table></figure>
 
 <p>该函数中首先会有另外一个回调来针对不同的资源设置不同的优雅删除策略，接口定义如下</p>
@@ -440,13 +440,13 @@
       <i class="fa fa-area-chart"></i>
     </span>
       <span class="post-meta-item-text">站点总字数：</span>
-    <span title="站点总字数">56k</span>
+    <span title="站点总字数">68k</span>
     <span class="post-meta-divider">|</span>
     <span class="post-meta-item-icon">
       <i class="fa fa-coffee"></i>
     </span>
       <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
-    <span title="站点阅读时长">51 分钟</span>
+    <span title="站点阅读时长">1:02</span>
 </div>
 
         

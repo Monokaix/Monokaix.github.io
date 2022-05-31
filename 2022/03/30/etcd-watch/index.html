@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
 <meta name="theme-color" content="#222">
-<meta name="generator" content="Hexo 5.4.0">
+<meta name="generator" content="Hexo 5.4.2">
   <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
@@ -32,8 +32,8 @@
 <meta property="article:modified_time" content="2022-03-30T06:19:07.891Z">
 <meta property="article:author" content="Monokai">
 <meta property="article:tag" content="源码">
-<meta property="article:tag" content="Etcd">
 <meta property="article:tag" content="Go">
+<meta property="article:tag" content="Etcd">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="http://example.com/2022/03/30/etcd-watch/process.png">
 
@@ -226,14 +226,14 @@
                 <i class="fa fa-file-word-o"></i>
               </span>
                 <span class="post-meta-item-text">本文字数：</span>
-              <span>22k</span>
+              <span>28k</span>
             </span>
             <span class="post-meta-item" title="阅读时长">
               <span class="post-meta-item-icon">
                 <i class="fa fa-clock-o"></i>
               </span>
                 <span class="post-meta-item-text">阅读时长 &asymp;</span>
-              <span>20 分钟</span>
+              <span>25 分钟</span>
             </span>
             <div class="post-description">watch是etcd的重要特性之一，有着非常广泛的应用，本文将详细介绍etcd watch设计原理与源码实现。</div>
 
@@ -252,7 +252,7 @@
 <h1 id="client请求"><a href="#client请求" class="headerlink" title="client请求"></a>client请求</h1><p>根据<code>etcdserver/etcdserverpb/rpc.pb.go</code>的定义，client端调用<code>NewWatchClient</code>生成一个watchClient，然后调用Watch方法生成一个<code>Watch_WatchClient</code>的client。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> WatchClient <span class="keyword">interface</span> &#123;</span><br><span class="line">   <span class="comment">// Watch watches for events happening or that have happened. Both input and output</span></span><br><span class="line">   <span class="comment">// are streams; the input stream is for creating and canceling watchers and the output</span></span><br><span class="line">   <span class="comment">// stream sends events. One watch RPC can watch on multiple key ranges, streaming events</span></span><br><span class="line">   <span class="comment">// for several watches at once. The entire event history can be watched starting from the</span></span><br><span class="line">   <span class="comment">// last compaction revision.</span></span><br><span class="line">   Watch(ctx context.Context, opts ...grpc.CallOption) (Watch_WatchClient, error)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> watchClient <span class="keyword">struct</span> &#123;</span><br><span class="line">    cc *grpc.ClientConn</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewWatchClient</span><span class="params">(cc *grpc.ClientConn)</span> <span class="title">WatchClient</span></span> &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;watchClient&#123;cc&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *watchClient)</span> <span class="title">Watch</span><span class="params">(ctx context.Context, opts ...grpc.CallOption)</span> <span class="params">(Watch_WatchClient, error)</span></span> &#123;</span><br><span class="line">    stream, err := grpc.NewClientStream(ctx, &amp;_Watch_serviceDesc.Streams[<span class="number">0</span>], c.cc, <span class="string">&quot;/etcdserverpb.Watch/Watch&quot;</span>, opts...)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    x := &amp;watchWatchClient&#123;stream&#125;</span><br><span class="line">    <span class="keyword">return</span> x, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
-<p><code>Watch_WatchClient</code>接口定义了两个方法，分别是发送/接收watch请求的Send和Recv。</p>
+<p><code>Watch_WatchClient</code>接口定义了两个方法，分别是发送&#x2F;接收watch请求的Send和Recv。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Watch_WatchClient <span class="keyword">interface</span> &#123;</span><br><span class="line">   Send(*WatchRequest) error</span><br><span class="line">   Recv() (*WatchResponse, error)</span><br><span class="line">   grpc.ClientStream</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>客户端只需调用Watch接口即可建立一个watch请求，底层的gRPCStream连接已由gRPC自动建立，client端只需关注watch请求和返回值即可。</p>
@@ -296,7 +296,7 @@
 <p><code>watchStream</code>的wach方法可以发现它继续调用了watchable的watch方法。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">w, c := ws.watchable.watch(key, end, startRev, id, ws.ch, fcs...)</span><br></pre></td></tr></table></figure>
 
-<p>并且传入了一个ws.ch字段，而这个channel正是sendLoop中的接收事件的channel，因此可以发现watchableStore正是通过watchStream的这个channel将事件传送给gRPC server端。代码位置mvcc/watcher.go</p>
+<p>并且传入了一个ws.ch字段，而这个channel正是sendLoop中的接收事件的channel，因此可以发现watchableStore正是通过watchStream的这个channel将事件传送给gRPC server端。代码位置mvcc&#x2F;watcher.go</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ws *watchStream)</span> <span class="title">Chan</span><span class="params">()</span> &lt;-<span class="title">chan</span> <span class="title">WatchResponse</span></span> &#123;</span><br><span class="line">   <span class="keyword">return</span> ws.ch</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>那么watchableStore究竟是怎么处理的呢？进一步分析<code>watchableStore</code>的watch方法可以知道在处理每个watch请求时，会将每个watch请求放入到一个watchGroup的结构体中，watchGroup记录了watcher关注的key与watcher映射的集合，其中又分为关注单个key的watcher以及关注区间key的watcher，关注单个key的watcher直接放在map里存储，而关注区间的watcher则使用了区间树进行记录，以提高查找watcher的效率。</p>
@@ -346,8 +346,8 @@
           
           <div class="post-tags">
               <a href="/tags/%E6%BA%90%E7%A0%81/" rel="tag"><i class="fa fa-tag"></i> 源码</a>
-              <a href="/tags/Etcd/" rel="tag"><i class="fa fa-tag"></i> Etcd</a>
               <a href="/tags/Go/" rel="tag"><i class="fa fa-tag"></i> Go</a>
+              <a href="/tags/Etcd/" rel="tag"><i class="fa fa-tag"></i> Etcd</a>
           </div>
 
         
@@ -488,13 +488,13 @@
       <i class="fa fa-area-chart"></i>
     </span>
       <span class="post-meta-item-text">站点总字数：</span>
-    <span title="站点总字数">56k</span>
+    <span title="站点总字数">68k</span>
     <span class="post-meta-divider">|</span>
     <span class="post-meta-item-icon">
       <i class="fa fa-coffee"></i>
     </span>
       <span class="post-meta-item-text">站点阅读时长 &asymp;</span>
-    <span title="站点阅读时长">51 分钟</span>
+    <span title="站点阅读时长">1:02</span>
 </div>
 
         
