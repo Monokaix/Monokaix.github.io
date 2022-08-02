@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 5.4.2">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+
+<link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.1.1/css/all.min.css" integrity="sha256-DfWjNxDkM94fVBWx1H5BMMp0Zq7luBlV8QRcSES7s+0=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://unpkg.com/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"example.com","root":"/","images":"/images","scheme":"Pisces","darkmode":false,"version":"8.11.1","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="IO多路复用之epoll使用、分析与总结">
+<meta property="og:type" content="article">
+<meta property="og:title" content="IO多路复用之epoll总结">
+<meta property="og:url" content="http://example.com/2022/07/30/epoll/index.html">
+<meta property="og:site_name" content="Monokai&#39;s Blog">
+<meta property="og:description" content="IO多路复用之epoll使用、分析与总结">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2022-07-29T19:41:28.000Z">
+<meta property="article:modified_time" content="2022-08-02T11:09:52.185Z">
+<meta property="article:author" content="Monokai">
+<meta property="article:tag" content="epoll">
+<meta property="article:tag" content="socket">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="http://example.com/2022/07/30/epoll/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"http://example.com/2022/07/30/epoll/","path":"2022/07/30/epoll/","title":"IO多路复用之epoll总结"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>IO多路复用之epoll总结 | Monokai's Blog</title>
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">Monokai's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">画船听雨眠</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8"><span class="nav-number">1.</span> <span class="nav-text">使用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#server%E7%AB%AF"><span class="nav-number">1.1.</span> <span class="nav-text">server端</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#client%E7%AB%AF"><span class="nav-number">1.2.</span> <span class="nav-text">client端</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BB%E8%A6%81%E6%8E%A5%E5%8F%A3%E5%87%BD%E6%95%B0"><span class="nav-number">2.</span> <span class="nav-text">主要接口函数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">3.</span> <span class="nav-text">数据结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E4%BD%93%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B"><span class="nav-number">4.</span> <span class="nav-text">总体处理流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B0%B4%E5%B9%B3%E4%B8%8E%E8%BE%B9%E7%BC%98%E8%A7%A6%E5%8F%91"><span class="nav-number">5.</span> <span class="nav-text">水平与边缘触发</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83"><span class="nav-number">6.</span> <span class="nav-text">参考</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Monokai"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Monokai</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">7</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/Monokaix" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;Monokaix" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/07/30/epoll/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Monokai">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Monokai's Blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="IO多路复用之epoll总结 | Monokai's Blog">
+      <meta itemprop="description" content="IO多路复用之epoll使用、分析与总结">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          IO多路复用之epoll总结
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-07-29 19:41:28" itemprop="dateCreated datePublished" datetime="2022-07-29T19:41:28Z">2022-07-29</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2022-08-02 11:09:52" itemprop="dateModified" datetime="2022-08-02T11:09:52Z">2022-08-02</time>
+    </span>
+
+  
+    <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv">
+      <span class="post-meta-item-icon">
+        <i class="far fa-eye"></i>
+      </span>
+      <span class="post-meta-item-text">阅读次数：</span>
+      <span id="busuanzi_value_page_pv"></span>
+    </span>
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7.1k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>6 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">IO多路复用之epoll使用、分析与总结</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h2 id="使用"><a href="#使用" class="headerlink" title="使用"></a>使用</h2><h3 id="server端"><a href="#server端" class="headerlink" title="server端"></a>server端</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;ctype.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/socket.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;arpa/inet.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/epoll.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> SERVER_PORT 8088</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> EPOLL_MAX_NUM 2048</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> BUFFER_MAX_LENGTH 4096</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">char</span> buffer[BUFFER_MAX_LENGTH];</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">str_toupper</span><span class="params">(<span class="keyword">char</span> *str)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> i;</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; <span class="built_in">strlen</span>(str); i++) &#123;</span><br><span class="line">        str[i] = <span class="built_in">toupper</span>(str[i]);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">(<span class="keyword">int</span> argc, <span class="keyword">char</span> **argv)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> listen_fd, client_fd;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">sockaddr_in</span> <span class="title">server_addr</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">sockaddr_in</span> <span class="title">client_addr</span>;</span></span><br><span class="line">    <span class="keyword">socklen_t</span> client_len;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">int</span> epfd = <span class="number">0</span>;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span> <span class="title">event</span>, *<span class="title">my_events</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// socket: 返回一个套接字</span></span><br><span class="line">    <span class="comment">// af: 协议族。AF_INET: 表示IPV4</span></span><br><span class="line">    <span class="comment">// type: socket类型。SOCK_STREAM: 连接类型是双向流, 即TCP</span></span><br><span class="line">    <span class="comment">// protocol: 协议,TCP或UDP等, 等于0时表示根据type字段自动选择对应的协议</span></span><br><span class="line">    listen_fd = socket(AF_INET, SOCK_STREAM, <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// bind: 将描述符和监听地址绑定</span></span><br><span class="line">    server_addr.sin_family = AF_INET;</span><br><span class="line">    <span class="comment">// htonl: 主机序转换为网络序, 小端转换为大端</span></span><br><span class="line">    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);</span><br><span class="line">    server_addr.sin_port = htons(SERVER_PORT);</span><br><span class="line">    bind(listen_fd, (struct sockaddr *) &amp;server_addr, <span class="keyword">sizeof</span>(server_addr));</span><br><span class="line"></span><br><span class="line">    <span class="comment">// listen</span></span><br><span class="line">    listen(listen_fd, <span class="number">10</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// create epoll</span></span><br><span class="line">    epfd = epoll_create(EPOLL_MAX_NUM);</span><br><span class="line">    <span class="keyword">if</span> (epfd &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        perror(<span class="string">&quot;epoll create&quot;</span>);</span><br><span class="line">        <span class="keyword">goto</span> END;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 注册listen_fd到epoll</span></span><br><span class="line">    event.events = EPOLLIN;</span><br><span class="line">    event.data.fd = listen_fd;</span><br><span class="line">    <span class="keyword">if</span> (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_fd, &amp;event) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        perror(<span class="string">&quot;epoll ctl add listen_fd &quot;</span>);</span><br><span class="line">        <span class="keyword">goto</span> END;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;successfully epoll_ctl listen fd\n&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 接收的事件</span></span><br><span class="line">    my_events = <span class="built_in">malloc</span>(<span class="keyword">sizeof</span>(struct epoll_event) * EPOLL_MAX_NUM);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 循环接收事件</span></span><br><span class="line">    <span class="keyword">while</span> (<span class="number">1</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;begin epoll wait...\n&quot;</span>);</span><br><span class="line">        <span class="comment">// 调用epoll_wait等待 -1表示无限阻塞</span></span><br><span class="line">        <span class="keyword">int</span> active_fds_cnt = epoll_wait(epfd, my_events, EPOLL_MAX_NUM, <span class="number">-1</span>);</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; active_fds_cnt; i++) &#123;</span><br><span class="line">            <span class="comment">// 监听fd有事件, 说明有新的连接进来, 调用accept接收处理</span></span><br><span class="line">            <span class="keyword">if</span> (my_events[i].data.fd == listen_fd) &#123;</span><br><span class="line">                <span class="comment">// 后面两个参数用来获取client的ip和端口信息</span></span><br><span class="line">                client_fd = accept(listen_fd, (struct sockaddr *) &amp;client_addr, &amp;client_len);</span><br><span class="line">                <span class="keyword">if</span> (client_fd &lt; <span class="number">0</span>) &#123;</span><br><span class="line">                    perror(<span class="string">&quot;accept&quot;</span>);</span><br><span class="line">                    <span class="keyword">continue</span>;</span><br><span class="line">                &#125;</span><br><span class="line"></span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;new connection comes\n&quot;</span>);</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;IP address is: %s\n&quot;</span>, inet_ntoa(client_addr.sin_addr));</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;port is: %d\n&quot;</span>, (<span class="keyword">int</span>) ntohs(client_addr.sin_port));</span><br><span class="line"></span><br><span class="line">                <span class="comment">// 注册客户端的fd到epoll</span></span><br><span class="line">                event.events = EPOLLIN | EPOLLET;</span><br><span class="line">                event.data.fd = client_fd;</span><br><span class="line">                epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, &amp;event);</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span> (my_events[i].events &amp; EPOLLIN) &#123;</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;EPOLLIN\n&quot;</span>);</span><br><span class="line">                client_fd = my_events[i].data.fd;</span><br><span class="line"></span><br><span class="line">                <span class="comment">// do read</span></span><br><span class="line">                buffer[<span class="number">0</span>] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">                <span class="comment">// 固定读取最大字节数为5</span></span><br><span class="line">                <span class="keyword">int</span> n = read(client_fd, buffer, <span class="number">5</span>);</span><br><span class="line">                <span class="keyword">if</span> (n &lt; <span class="number">0</span>) &#123;</span><br><span class="line">                    perror(<span class="string">&quot;read&quot;</span>);</span><br><span class="line">                    <span class="keyword">continue</span>;</span><br><span class="line">                &#125; <span class="keyword">else</span> <span class="keyword">if</span> (n == <span class="number">0</span>) &#123; <span class="comment">// 连接已关闭</span></span><br><span class="line">                    <span class="built_in">printf</span>(<span class="string">&quot;close...\n&quot;</span>);</span><br><span class="line">                    epoll_ctl(epfd, EPOLL_CTL_DEL, client_fd, &amp;event);</span><br><span class="line">                    close(client_fd);</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    <span class="built_in">printf</span>(<span class="string">&quot;[read]: %s\n&quot;</span>, buffer);</span><br><span class="line">                    buffer[n] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">                    str_toupper(buffer);</span><br><span class="line">                    write(client_fd, buffer, <span class="built_in">strlen</span>(buffer));</span><br><span class="line">                    <span class="built_in">printf</span>(<span class="string">&quot;[write]: %s \n&quot;</span>, buffer);</span><br><span class="line">                    <span class="built_in">memset</span>(buffer, <span class="number">0</span>, BUFFER_MAX_LENGTH);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span> (my_events[i].events &amp; EPOLLOUT) &#123;</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;EPOLLOUT\n&quot;</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    END:</span><br><span class="line">    close(epfd);</span><br><span class="line">    close(listen_fd);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行.&#x2F;epoll_demo_server </p>
+<h3 id="client端"><a href="#client端" class="headerlink" title="client端"></a>client端</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//</span></span><br><span class="line"><span class="comment">// Created by c00577049 on 2022/7/27.</span></span><br><span class="line"><span class="comment">//</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;string.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;strings.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/socket.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;arpa/inet.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;fcntl.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> MAX_LINE (3)</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> SERVER_PORT (8088)</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">set_non_blocking</span><span class="params">(<span class="keyword">int</span> fd)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> opts = <span class="number">0</span>;</span><br><span class="line">    opts = fcntl(fd, F_GETFL);</span><br><span class="line">    opts = opts | O_NONBLOCK;</span><br><span class="line">    fcntl(fd, F_SETFL);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">(<span class="keyword">int</span> argc, <span class="keyword">char</span> **argv)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> sockfd;</span><br><span class="line">    <span class="keyword">char</span> recvline[MAX_LINE + <span class="number">1</span>] = &#123;<span class="number">0</span>&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">sockaddr_in</span> <span class="title">server_addr</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (argc != <span class="number">2</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;usage ./client &lt;SERVER_IP&gt;\n&quot;</span>);</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 创建socket</span></span><br><span class="line">    <span class="keyword">if</span> ((sockfd = socket(AF_INET, SOCK_STREAM, <span class="number">0</span>)) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;socket error&quot;</span>);</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 给server addr赋值</span></span><br><span class="line">    bzero(&amp;server_addr, <span class="keyword">sizeof</span>(server_addr));</span><br><span class="line">    server_addr.sin_family = AF_INET;</span><br><span class="line">    server_addr.sin_port = htons(SERVER_PORT);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (inet_pton(AF_INET, argv[<span class="number">1</span>], &amp;server_addr.sin_addr) &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;inet_pton error for %s&quot;</span>, argv[<span class="number">1</span>]);</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 连接服务端</span></span><br><span class="line">    <span class="keyword">if</span> (connect(sockfd, (struct sockaddr *) (&amp;server_addr), <span class="keyword">sizeof</span>(server_addr)) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        perror(<span class="string">&quot;connect&quot;</span>);</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;connect error\n&quot;</span>);</span><br><span class="line">        <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    set_non_blocking(sockfd);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">char</span> input[<span class="number">100</span>];</span><br><span class="line">    <span class="keyword">int</span> n = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">int</span> count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 循环从标准输入读取数据</span></span><br><span class="line">    <span class="keyword">while</span> (fgets(input, <span class="number">100</span>, <span class="built_in">stdin</span>) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;[send] %s\n&quot;</span>, input);</span><br><span class="line">        n = <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// 读取的数据发送到服务器</span></span><br><span class="line">        n = send(sockfd, input, <span class="built_in">strlen</span>(input), <span class="number">0</span>);</span><br><span class="line">        <span class="keyword">if</span> (n &lt; <span class="number">0</span>) &#123;</span><br><span class="line">            perror(<span class="string">&quot;send&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        n = <span class="number">0</span>;</span><br><span class="line">        count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 读取服务器返回的数据</span></span><br><span class="line">        <span class="keyword">while</span> (<span class="number">1</span>) &#123;</span><br><span class="line">            n = read(sockfd, recvline + count, MAX_LINE);</span><br><span class="line">            <span class="built_in">printf</span>(<span class="string">&quot;n====%d\n&quot;</span>, n);</span><br><span class="line">            <span class="keyword">if</span> (n == MAX_LINE) &#123;</span><br><span class="line">                count += n;</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;count1==%d\n&quot;</span>, count);</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;[recv11] %s\n&quot;</span>, recvline);</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;here......\n&quot;</span>);</span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span> (n &lt; <span class="number">0</span>) &#123;</span><br><span class="line">                perror(<span class="string">&quot;read&quot;</span>);</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                count += n;</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;count2==%d\n&quot;</span>, count);</span><br><span class="line">                recvline[count] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">                <span class="built_in">printf</span>(<span class="string">&quot;[recv22] %s\n&quot;</span>, recvline);</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行.&#x2F;epoll_demo_client 127.0.0.1，输入字符，会返回对应字符的大写。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/Monokaix/unix-socket/tree/master/epoll-demo">完整例子</a></p>
+<h2 id="主要接口函数"><a href="#主要接口函数" class="headerlink" title="主要接口函数"></a>主要接口函数</h2><ul>
+<li><p>i<strong>nt epoll_create</strong> ( int size ); 创建epoll实例，返回epoll对应的fd</p>
+</li>
+<li><p><strong>int epoll_ctl</strong> ( int epfd, int op, int fd, struct epoll_event *event ); 注册监听的事件</p>
+<p>事件类型op主要有以下几种</p>
+<p>   EPOLL_CTL_ADD：往事件表中注册fd上的事件</p>
+<p>   EPOLL_CTL_MOD：修改fd上的注册事件</p>
+<p>   EPOLL_CTL_DEL：删除fd上的注册事件</p>
+</li>
+<li><p><strong>int epoll_wait</strong> ( int epfd, struct epoll_event* events, int maxevents, int timeout );</p>
+<p>函数说明：   </p>
+<p>返回值：成功时返回就绪的文件描述符的个数，失败时返回-1并设置errno</p>
+<p> timeout：指定epoll的超时时间，单位是毫秒。当timeout为-1时，epoll_wait调用将永远阻塞，直到某个时间发生。当timeout为0时，epoll_wait调用将立即返回。</p>
+<p>events：就绪的fd对应的事件，由内核态返回赋值到用户态，然后读取这个evnents[i]进行事件处理</p>
+<p> maxevents：指定最多监听多少个事件</p>
+</li>
+</ul>
+<h2 id="数据结构"><a href="#数据结构" class="headerlink" title="数据结构"></a>数据结构</h2><p>调用epoll_create初始化epoll实例时，其实内核会创建一个eventpollfs类型的文件系统，因此我们看到该函数返回的是一个也是fd，后续的操作都围绕这个epoll实例展开。</p>
+<p>调用epoll_ctl时会把传入的fd和监听事件包装为epitem，放入到红黑树中，这样做是为了加快查找删除fd的效率。</p>
+<p>调用epoll_wait时，当有就绪的fd时，epoll会通过ep_poll_callback回调函数把就绪事件一个叫做rdlist的双向链表中。</p>
+<h2 id="总体处理流程"><a href="#总体处理流程" class="headerlink" title="总体处理流程"></a>总体处理流程</h2><ol>
+<li>epoll_wait调用ep_poll，当rdlist为空（无就绪fd）时挂起当前进程，直到rdlist不空时进程才被唤醒，这里用到的是内核的队列唤醒等待机制。</li>
+<li>每个io设备的驱动中都注册了一个回调函数，当有数据发送获读取时会调用这个回调函数，比如键盘接收到用户的点击、网卡收到新事物数据包，这个回调函数就是 ep_ptable_queue_proc，然后调用ep_poll_callback。</li>
+<li>ep_poll_callback将相应fd对应epitem加入rdlist，导致rdlist不空，进程被唤醒，epoll_wait得以继续执行。</li>
+<li>ep_events_transfer函数将rdlist中的epitem拷贝到txlist中，并将rdlist清空。</li>
+<li>ep_send_events函数（很关键），它扫描txlist中的每个epitem，调用其关联fd对用的poll方法。此时对poll的调用仅仅是取得fd上较新的events（防止之前events被更新），之后将取得的events和相应的fd发送到用户空间（封装在struct epoll_event，从epoll_wait返回）。</li>
+</ol>
+<h2 id="水平与边缘触发"><a href="#水平与边缘触发" class="headerlink" title="水平与边缘触发"></a>水平与边缘触发</h2><p><strong>水平触发EPOOLLT</strong>：默认模式，即fd就绪时，若fd对应的buffer数据未处理，则在下一次调用epoll_wait时会继续发送这个事件，直到就绪的fd对应的缓冲区数据被处理完，这种模式易于编程，不用担心事件数据丢失。缺点是需要不断调用epoll_wait系统调用来获取就绪事件，存在性能问题。水平触发的实现原理为：在调用完ep_send_events之后又执行了ep_reinject_items函数，该函数会把没有处理过的事件再次放到rdlist，因此下次调用epoll_wait时发现rdlist不为空就直接返回就绪事件了，因此看到的现象是会一直触发直到事件被处理。</p>
+<p><strong>边缘触发EPOLLET</strong>：当调用epoll_wait返回就绪事件后，若该事件未被处理，则下一次epoll_wait调用不会重复返回该事件，对程序编码要求较高，以防止事件未被处理而丢失，但该模式可以减少系统调用，提升效率。</p>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.cnblogs.com/lojunren/p/3856290.html">https://www.cnblogs.com/lojunren/p/3856290.html</a></li>
+<li><a target="_blank" rel="noopener" href="http://blog.chinaunix.net/uid-28541347-id-4238524.html">http://blog.chinaunix.net/uid-28541347-id-4238524.html</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/epoll/" rel="tag"># epoll</a>
+              <a href="/tags/socket/" rel="tag"># socket</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/03/12/pod_terminating/" rel="prev" title="Pod删除流程及长期处于Terminating状态分析">
+                  <i class="fa fa-chevron-left"></i> Pod删除流程及长期处于Terminating状态分析
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2022/07/30/nc/" rel="next" title="nc命令实现端口转发">
+                  nc命令实现端口转发 <i class="fa fa-chevron-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments gitalk-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Monokai</span>
+</div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">65k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">59 分钟</span>
+  </span>
+</div>
+<div class="busuanzi-count">
+    <span class="post-meta-item" id="busuanzi_container_site_uv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://unpkg.com/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/next-boot.js"></script>
+
+  
+<script src="https://unpkg.com/hexo-generator-searchdb@1.4.0/dist/search.js" integrity="sha256-vXZMYLEqsROAXkEw93GGIvaB2ab+QW6w3+1ahD9nXXA=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+  
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+<link rel="stylesheet" href="https://unpkg.com/gitalk@1.7.2/dist/gitalk.css" integrity="sha256-AJnUHL7dBv6PGaeyPQJcgQPDjt/Hn/PvYZde1iqfp8U=" crossorigin="anonymous">
+
+<script class="next-config" data-name="gitalk" type="application/json">{"enable":true,"github_id":"Monokaix","repo":"Monokaix.github.io","client_id":"57a4ec850cf32900866a","client_secret":"1a515a244ad352670b0d3ca4cf553302b906fa61","admin_user":"Monokaix","distraction_free_mode":true,"proxy":"https://cors-anywhere.azm.workers.dev/https://github.com/login/oauth/access_token","language":"zh-CN","js":{"url":"https://unpkg.com/gitalk@1.7.2/dist/gitalk.min.js","integrity":"sha256-Pmj85ojLaPOWwRtlMJwmezB/Qg8BzvJp5eTzvXaYAfA="},"path_md5":"3e26522c5dd9a541ecb69739e930994a"}</script>
+<script src="/js/third-party/comments/gitalk.js"></script>
+
+</body>
+</html>
