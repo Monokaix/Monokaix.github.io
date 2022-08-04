@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 5.4.2">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:300,300italic,400,400italic,700,700italic&display=swap&subset=latin,latin-ext">
+
+<link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@6.1.2/css/all.min.css" integrity="sha256-xejo6yLi6vGtAjcMIsY8BHdKsLg7QynVlFMzdQgUuy8=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://unpkg.com/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"example.com","root":"/","images":"/images","scheme":"Pisces","darkmode":false,"version":"8.12.3","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="介绍libevent在Windows平台下的编译、安装及使用。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="libevent Windows平台安装及使用">
+<meta property="og:url" content="http://example.com/2022/08/05/libevent-demo/index.html">
+<meta property="og:site_name" content="Monokai&#39;s Blog">
+<meta property="og:description" content="介绍libevent在Windows平台下的编译、安装及使用。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://example.com/2022/08/05/libevent-demo/libevent.PNG">
+<meta property="article:published_time" content="2022-08-04T19:50:43.000Z">
+<meta property="article:modified_time" content="2022-08-04T11:56:17.439Z">
+<meta property="article:author" content="Monokai">
+<meta property="article:tag" content="epoll">
+<meta property="article:tag" content="libevent">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/08/05/libevent-demo/libevent.PNG">
+
+
+<link rel="canonical" href="http://example.com/2022/08/05/libevent-demo/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"http://example.com/2022/08/05/libevent-demo/","path":"2022/08/05/libevent-demo/","title":"libevent Windows平台安装及使用"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>libevent Windows平台安装及使用 | Monokai's Blog</title>
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">Monokai's Blog</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">画船听雨眠</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%AE%89%E8%A3%85"><span class="nav-number">1.</span> <span class="nav-text">安装</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8camke%E6%9E%84%E5%BB%BA"><span class="nav-number">1.1.</span> <span class="nav-text">使用camke构建</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#make%E7%BC%96%E8%AF%91"><span class="nav-number">1.2.</span> <span class="nav-text">make编译</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8"><span class="nav-number">2.</span> <span class="nav-text">使用</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%AE%9E%E4%BE%8B"><span class="nav-number">3.</span> <span class="nav-text">实例</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Monokai"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Monokai</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author site-overview-item animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/Monokaix" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;Monokaix" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/08/05/libevent-demo/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Monokai">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Monokai's Blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="libevent Windows平台安装及使用 | Monokai's Blog">
+      <meta itemprop="description" content="介绍libevent在Windows平台下的编译、安装及使用。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          libevent Windows平台安装及使用
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2022-08-04 19:50:43 / 修改时间：11:56:17" itemprop="dateCreated datePublished" datetime="2022-08-04T19:50:43Z">2022-08-04</time>
+    </span>
+
+  
+    <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv">
+      <span class="post-meta-item-icon">
+        <i class="far fa-eye"></i>
+      </span>
+      <span class="post-meta-item-text">阅读次数：</span>
+      <span id="busuanzi_value_page_pv"></span>
+    </span>
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>5 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">介绍libevent在Windows平台下的编译、安装及使用。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h1 id="安装"><a href="#安装" class="headerlink" title="安装"></a>安装</h1><p>下载libevent源码</p>
+<p>git clone <a target="_blank" rel="noopener" href="https://github.com/libevent/libevent.git">https://github.com/libevent/libevent.git</a></p>
+<h2 id="使用camke构建"><a href="#使用camke构建" class="headerlink" title="使用camke构建"></a>使用camke构建</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> mkdir build &amp;&amp; <span class="built_in">cd</span> build</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> cmake .. -DEVENT__DISABLE_OPENSSL=ON -DEVENT__LIBRARY_TYPE=STATIC -DEVENT__DISABLE_DEBUG_MODE=ON -G <span class="string">&quot;CodeBlocks - MinGW Makefiles&quot;</span> -DCMAKE_MAKE_PROGRAM=C:/Mingw64/bin/make.exe -DCMA</span></span><br><span class="line">KE_C_COMPILER=C:/Mingw64/bin/gcc.exe -DCMAKE_CXX_COMPILER=C:/Mingw64/bin/g++.exe -G &quot;CodeBlocks - MinGW Makefiles&quot; -S &quot;D:\code\c\libevent&quot; -B &quot;D:\code\c\libevent\build&quot;</span><br></pre></td></tr></table></figure>
+
+<p>cmake参数说明：</p>
+<p>EVENT__DISABLE_OPENSSL：关闭ssl，这样可以避免下载openssl并设置环境变量。</p>
+<p>EVENT__LIBRARY_TYPE：编译成静态库，方便后续使用时直接引用进行编译链接。</p>
+<p>EVENT__DISABLE_DEBUG_MODE：关闭debug模式。</p>
+<p>-G：指定构建系统生成器，据此生成不同平台下的Makefile格式。</p>
+<p>CMAKE_MAKE_PROGRAM：make命令路径。</p>
+<p>CMAKE_C_COMPILER：gcc路径。</p>
+<p>CMAKE_CXX_COMPILER：g++地址。</p>
+<p>-S：源目录。</p>
+<p>-B：构建目录。</p>
+<p>执行成功后会在当前目录生成响应的Makefile</p>
+<h2 id="make编译"><a href="#make编译" class="headerlink" title="make编译"></a>make编译</h2><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> make</span></span><br></pre></td></tr></table></figure>
+
+<p>该命令执行成功会生成对应静态库，如下所示：</p>
+<p><img src="/2022/08/05/libevent-demo/libevent.PNG" alt="整体流程"></p>
+<p>主要是三个静态文件libevent.a、libevent_core.a、libevent_extra.a</p>
+<h1 id="使用"><a href="#使用" class="headerlink" title="使用"></a>使用</h1><p>在创建的项目里新建include目录。</p>
+<ul>
+<li>将libevent项目中include下的文件全部拷贝到include目录。</li>
+<li>将build&#x2F;include&#x2F;event2中的文件拷贝到include&#x2F;event2文件夹，同时将build&#x2F;include文件拷贝到include目录。</li>
+<li>将WIN32-Code目录文件拷贝到include目录。</li>
+</ul>
+<p>在创建的项目里新建lib目录</p>
+<p>将make生成的三个静态文件拷贝到lib目录。</p>
+<h1 id="实例"><a href="#实例" class="headerlink" title="实例"></a>实例</h1><p>上一步准备了项目中需要include的头文件和静态库，接下来使用libevent完成最终代码的编写。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment">  This example program provides a trivial server program that listens for TCP</span></span><br><span class="line"><span class="comment">  connections on port 9995.  When they arrive, it writes a short message to</span></span><br><span class="line"><span class="comment">  each client connection, and closes each connection once it is flushed.</span></span><br><span class="line"><span class="comment"></span></span><br><span class="line"><span class="comment">  Where possible, it exits cleanly in response to a SIGINT (ctrl-c).</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;string.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;errno.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;signal.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">ifndef</span> _WIN32</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;netinet/in.h&gt;</span></span></span><br><span class="line"><span class="meta"># <span class="meta-keyword">ifdef</span> _XOPEN_SOURCE_EXTENDED</span></span><br><span class="line"><span class="meta">#  <span class="meta-keyword">include</span> <span class="meta-string">&lt;arpa/inet.h&gt;</span></span></span><br><span class="line"><span class="meta"># <span class="meta-keyword">endif</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;sys/socket.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;event2/bufferevent.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;event2/buffer.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;event2/listener.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;event2/util.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;event2/event.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> <span class="keyword">char</span> MESSAGE[] = <span class="string">&quot;Hello, World!\n&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> <span class="keyword">int</span> PORT = <span class="number">8080</span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">listener_cb</span><span class="params">(struct evconnlistener *, <span class="keyword">evutil_socket_t</span>,</span></span></span><br><span class="line"><span class="params"><span class="function">                        struct sockaddr *, <span class="keyword">int</span> socklen, <span class="keyword">void</span> *)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">conn_writecb</span><span class="params">(struct bufferevent *, <span class="keyword">void</span> *)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">conn_eventcb</span><span class="params">(struct bufferevent *, <span class="keyword">short</span>, <span class="keyword">void</span> *)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">signal_cb</span><span class="params">(<span class="keyword">evutil_socket_t</span>, <span class="keyword">short</span>, <span class="keyword">void</span> *)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">(<span class="keyword">int</span> argc, <span class="keyword">char</span> **argv)</span> </span>&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">event_base</span> *<span class="title">base</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">evconnlistener</span> *<span class="title">listener</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">event</span> *<span class="title">signal_event</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">sockaddr_in</span> <span class="title">sin</span> =</span> &#123;<span class="number">0</span>&#125;;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="meta-keyword">ifdef</span> _WIN32</span></span><br><span class="line">    WSADATA wsa_data;</span><br><span class="line">    WSAStartup(<span class="number">0x0201</span>, &amp;wsa_data);</span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br><span class="line"></span><br><span class="line">    base = event_base_new();</span><br><span class="line">    <span class="keyword">if</span> (!base) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Could not initialize libevent!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">sin</span>.sin_family = AF_INET;</span><br><span class="line">    <span class="built_in">sin</span>.sin_port = htons(PORT);</span><br><span class="line"></span><br><span class="line">    listener = evconnlistener_new_bind(base, listener_cb, (<span class="keyword">void</span> *) base, LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_FREE, <span class="number">-1</span>,</span><br><span class="line">                                       (struct sockaddr *) &amp;<span class="built_in">sin</span>, <span class="keyword">sizeof</span>(<span class="built_in">sin</span>));</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!listener) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Could not create a listener!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    signal_event = evsignal_new(base, SIGINT, signal_cb, (<span class="keyword">void</span> *) base);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!signal_event || event_add(signal_event, <span class="literal">NULL</span>) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Could not create/add s signal_event!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 死循环处理事件，对于epoll调用的就是epoll_wait等待事件</span></span><br><span class="line">    event_base_dispatch(base);</span><br><span class="line"></span><br><span class="line">    evconnlistener_free(listener);</span><br><span class="line">    event_free(signal_event);</span><br><span class="line">    event_base_free(base);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;done\n&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span></span></span><br><span class="line"><span class="function"><span class="title">listener_cb</span><span class="params">(struct evconnlistener *listener, <span class="keyword">evutil_socket_t</span> fd, struct sockaddr *sa, <span class="keyword">int</span> socklen, <span class="keyword">void</span> *user_data)</span> </span>&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">event_base</span> *<span class="title">base</span> =</span> user_data;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">bufferevent</span> *<span class="title">bev</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 每次有新的连接会分配一个新的fd处理客户端的事件，分配一个bufferevent调用回调函数处理</span></span><br><span class="line">    bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);</span><br><span class="line">    <span class="keyword">if</span> (!bev) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Error constructing bufferevebnt!\n&quot;</span>);</span><br><span class="line">        event_base_loopbreak(base);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 设置readcb、writecb、eventcb回调</span></span><br><span class="line">    <span class="comment">// readcb: 监听到新连接事件时的读事件处理，这里为NULL，因为不需要读额外的数据</span></span><br><span class="line">    <span class="comment">// writecb: 监听到新连接事件时的写事件处理</span></span><br><span class="line">    <span class="comment">// eventcb: 处理错误</span></span><br><span class="line">    bufferevent_setcb(bev, <span class="literal">NULL</span>, conn_writecb, conn_eventcb, <span class="literal">NULL</span>);</span><br><span class="line">    bufferevent_enable(bev, EV_WRITE);</span><br><span class="line">    bufferevent_disable(bev, EV_READ);</span><br><span class="line"></span><br><span class="line">    bufferevent_write(bev, MESSAGE, <span class="built_in">strlen</span>(MESSAGE));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 处理写事件的回调</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">conn_writecb</span><span class="params">(struct bufferevent *bev, <span class="keyword">void</span> *user_data)</span> </span>&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">evbuffer</span> *<span class="title">output</span> =</span> bufferevent_get_output(bev);</span><br><span class="line">    <span class="keyword">if</span> (evbuffer_get_length(output) == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;flushed answer\n&quot;</span>);</span><br><span class="line">        bufferevent_free(bev);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 处理错误的回调函数</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">conn_eventcb</span><span class="params">(struct bufferevent *bev, <span class="keyword">short</span> events, <span class="keyword">void</span> *user_data)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (events &amp; BEV_EVENT_EOF) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Connection closed.\n&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (events &amp; BEV_EVENT_ERROR) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Got an error on the connection: %s\n&quot;</span>, strerror(errno));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    bufferevent_free(bev);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 设置接收信号退出的回调函数</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">signal_cb</span><span class="params">(<span class="keyword">evutil_socket_t</span> sig, <span class="keyword">short</span> events, <span class="keyword">void</span> *user_data)</span> </span>&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">event_base</span> *<span class="title">base</span> =</span> user_data;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timeval</span> <span class="title">delay</span> =</span> &#123;<span class="number">2</span>, <span class="number">0</span>&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;Caught an interrupt signal; exiting cleanly in two seconds.\n&quot;</span>);</span><br><span class="line"></span><br><span class="line">    event_base_loopexit(base, &amp;delay);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>编译运行后访问127.0.0.1:8080，可以访问即代表成功，完整代码<a target="_blank" rel="noopener" href="https://github.com/Monokaix/unix-socket/tree/master/libevent-demo%E3%80%82">https://github.com/Monokaix/unix-socket/tree/master/libevent-demo。</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/epoll/" rel="tag"># epoll</a>
+              <a href="/tags/libevent/" rel="tag"># libevent</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/07/30/nc/" rel="prev" title="nc命令实现端口转发">
+                  <i class="fa fa-chevron-left"></i> nc命令实现端口转发
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments gitalk-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Monokai</span>
+</div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">70k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">1:03</span>
+  </span>
+</div>
+<div class="busuanzi-count">
+    <span class="post-meta-item" id="busuanzi_container_site_uv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://unpkg.com/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/next-boot.js"></script>
+
+  
+<script src="https://unpkg.com/hexo-generator-searchdb@1.4.0/dist/search.js" integrity="sha256-vXZMYLEqsROAXkEw93GGIvaB2ab+QW6w3+1ahD9nXXA=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+  
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+<link rel="stylesheet" href="https://unpkg.com/gitalk@1.7.2/dist/gitalk.css" integrity="sha256-AJnUHL7dBv6PGaeyPQJcgQPDjt/Hn/PvYZde1iqfp8U=" crossorigin="anonymous">
+
+<script class="next-config" data-name="gitalk" type="application/json">{"enable":true,"github_id":"Monokaix","repo":"Monokaix.github.io","client_id":"57a4ec850cf32900866a","client_secret":"1a515a244ad352670b0d3ca4cf553302b906fa61","admin_user":"Monokaix","distraction_free_mode":true,"proxy":"https://cors-anywhere.azm.workers.dev/https://github.com/login/oauth/access_token","language":"zh-CN","js":{"url":"https://unpkg.com/gitalk@1.7.2/dist/gitalk.min.js","integrity":"sha256-Pmj85ojLaPOWwRtlMJwmezB/Qg8BzvJp5eTzvXaYAfA="},"path_md5":"502dd380d0eb260f8ff4c15ef8b37608"}</script>
+<script src="/js/third-party/comments/gitalk.js"></script>
+
+</body>
+</html>
